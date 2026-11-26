@@ -39,6 +39,25 @@ AGENT_VERSION = os.getenv("AGENT_VERSION", "v2")
 LLM_MODEL = os.getenv("LLM_MODEL", mock_llm.DEFAULT_MODEL)
 PORT = int(os.getenv("PORT", "8000"))
 
+
+EXTRA_KNOWLEDGE: list[tuple[list[str], str]] = [
+    (
+        ["jwt", "api key", "xác thực"],
+        "API key là chuỗi bí mật cố định định danh ứng dụng, còn JWT (JSON Web Token) là token "
+        "tự chứa thông tin user (claims), có thời gian hết hạn (exp) và chữ ký số (signature) "
+        "để verify mà không cần tra database mỗi request.",
+    ),
+    (
+        ["kubernetes", "hpa", "horizontal pod autoscaler", "autoscale"],
+        "Kubernetes HPA (Horizontal Pod Autoscaler) tự động tăng/giảm số lượng pod dựa trên "
+        "chỉ số tài nguyên như CPU, memory, và các custom metrics (như RPS hoặc độ dài queue).",
+    ),
+]
+
+
+def _retrieve_extra(question: str) -> list[str]:
+    q = question.lower()
+    return [doc for kws, doc in EXTRA_KNOWLEDGE if any(kw in q for kw in kws)][:1]
 # ─────────────────────────────────────────────────────────
 # Logging — mỗi dòng là một JSON object
 # ─────────────────────────────────────────────────────────
@@ -155,7 +174,12 @@ class AskResponse(BaseModel):
 @app.post("/ask", response_model=AskResponse)
 async def ask(body: AskRequest, request: Request):
     # v2 có bước retrieval (RAG) → chính xác hơn nhưng prompt dài hơn → tốn token hơn
-    context = await mock_llm.search_knowledge_base(body.question) if AGENT_VERSION == "v2" else None
+    if AGENT_VERSION == "v2":
+        context = await mock_llm.search_knowledge_base(body.question)
+        if not context:
+            context = _retrieve_extra(body.question)
+    else:
+        context = None
 
     try:
         result = await mock_llm.generate(body.question, context=context, model=LLM_MODEL)
