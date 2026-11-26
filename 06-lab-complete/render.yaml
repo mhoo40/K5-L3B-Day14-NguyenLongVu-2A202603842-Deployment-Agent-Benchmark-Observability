@@ -5,3 +5,28 @@
 #     - envVars: secret như AGENT_API_KEY dùng `generateValue: true` hoặc `sync: false`,
 #       KHÔNG ghi thẳng giá trị
 # ============================================================
+services:
+  - type: web
+    name: ai-agent
+    runtime: docker
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: agent-cache
+          property: connectionString
+      - key: AGENT_API_KEY
+        generateValue: true
+
+  - type: redis
+    name: agent-cache
+    region: singapore
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
