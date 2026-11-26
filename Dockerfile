@@ -1,37 +1,37 @@
-# ==========================================
-# STAGE 1: The Build Environment
-# ==========================================
-# We use a large image that includes the Go compiler and tools
-FROM golang:1.22 AS builder
+# Stage 1: Builder
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY 06-lab-complete/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy the rest of the source code
-COPY . .
+RUN groupadd --system appgroup && useradd --system --gid appgroup appuser
 
-# Compile the application into a single, statically-linked binary named "myapp"
-RUN CGO_ENABLED=0 go build -o myapp .
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
 
-# ==========================================
-# STAGE 2: The Production Environment
-# ==========================================
-# We switch to a completely fresh, microscopic image for production
-FROM alpine:3.19
+COPY 06-lab-complete/app ./app
+COPY 06-lab-complete/utils ./utils
 
-WORKDIR /app
-
-# Tạo non-root user
-RUN addgroup -S appuser && adduser -S appuser -G appuser
-
-# Đặt ownership cho appuser
-RUN chown -R appuser:appuser /app
-
-# Chuyển sang non-root user
+RUN chown -R appuser:appgroup /app
 USER appuser
 
-# CRITICAL STEP: Copy ONLY the compiled binary from the 'builder' stage
-COPY --from=builder /app/myapp .
+EXPOSE 8000
 
-# Expose port and define the command to run the app
-EXPOSE 8080
-CMD ["./myapp"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.getenv(\"PORT\", \"8000\")}/health')" || exit 1
+
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

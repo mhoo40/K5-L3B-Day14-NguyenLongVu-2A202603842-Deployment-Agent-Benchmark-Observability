@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.auth import verify_api_key
+from app.config import settings
 from app.cost_guard import check_budget, record_cost
 from app.rate_limiter import check_rate_limit
 from app.redis_client import r, redis_healthy
@@ -55,34 +56,28 @@ is_shutting_down = False
 #   Khi nhận SIGTERM: ngừng nhận request mới, xử lý xong request đang chạy rồi thoát (exit code 0).
 #   Gợi ý: dùng lifespan của FastAPI để dọn dẹp. Nếu tự đăng ký signal handler cho SIGTERM thì
 #   phải gọi lại handler cũ của uvicorn, nếu không process sẽ không bao giờ tắt.
+@asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    ✅ Lifecycle management:
-    - startup: khởi tạo connections, load model
-    - shutdown: đóng connections gracefully
-    """
-    global is_ready
+    global is_shutting_down
+    prev_sigterm = signal.getsignal(signal.SIGTERM)
 
-    # --- Startup ---
-    logger.info(json.dumps({
-        "event": "startup",
-        "app": settings.app_name,
-        "version": settings.app_version,
-        "env": settings.environment,
-        "port": settings.port,
-    }))
-    # Simulate loading model/connecting DB
-    time.sleep(0.1)
-    is_ready = True
-    logger.info("Agent is ready to serve requests")
+    def handle_sigterm(signum, frame):
+        global is_shutting_down
+        is_shutting_down = True
+        logger.info("Received SIGTERM, shutting down gracefully")
+        if callable(prev_sigterm):
+            prev_sigterm(signum, frame)
 
-    yield  # App running
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    logger.info("Application started")
+    yield
+    is_shutting_down = True
+    try:
+        r.close()
+    except Exception:
+        pass
+    logger.info("Application shutdown complete")
 
-    # --- Shutdown ---
-    is_ready = False
-    logger.info("Agent shutting down gracefully — finishing in-flight requests...")
-    time.sleep(0.1)  # Cho request hiện tại hoàn thành
-    logger.info("Shutdown complete")
 
 app = FastAPI(title="Production AI Agent", lifespan=lifespan)
 

@@ -17,6 +17,7 @@ class Settings:
     # TODO: thay các giá trị cố định bên dưới bằng giá trị đọc từ biến môi trường
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     environment: str = field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
+    app_name: str = field(default_factory=lambda: os.getenv("APP_NAME", "Production AI Agent"))
     agent_api_key: str = field(default_factory=lambda: os.getenv("AGENT_API_KEY", ""))
     redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     rate_limit_per_minute: int = field(default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_MINUTE", "10")))
